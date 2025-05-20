@@ -1,5 +1,7 @@
+import tkinter as tk
+from PIL import Image, ImageTk
 import requests
-import json
+import io
 
 class NasaAPI:
     def __init__(self, query): 
@@ -18,29 +20,76 @@ class NasaAPI:
         data = self.fetch_data()
         return data.get("collection", {}).get("items", [])
 
-def main():
-    query = input("Podaj zapytanie: ")
-    try:
-        nasa_api = NasaAPI(query)
-        items = nasa_api.get_images()
 
-        if not items:
-            print("Brak wyników")
+class NasaApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("NASA Wyszukiwarka")
+        self.root.configure(bg="black")
+
+        self.left_frame = tk.Frame(root, bg="black")
+        self.left_frame.pack(side=tk.LEFT, fill=tk.Y)
+
+        self.right_frame = tk.Frame(root, bg="black")
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        self.query_entry = tk.Entry(self.left_frame, bg="black", fg="green", insertbackground="green")
+        self.query_entry.pack(padx=10, pady=10)
+        self.query_entry.bind("<Return>", lambda event: self.search_images())
+
+        self.search_button = tk.Button(self.left_frame, text="Szukaj", command=self.search_images, bg="black", fg="green")
+        self.search_button.pack(pady=5)
+
+        self.image_listbox = tk.Listbox(self.left_frame, bg="black", fg="green")
+        self.image_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.image_listbox.bind("<<ListboxSelect>>", self.show_image)
+
+        self.image_label = tk.Label(self.right_frame, bg="black")
+        self.image_label.pack(padx=10, pady=10)
+
+        self.image_urls = []
+
+    def search_images(self):
+        query = self.query_entry.get()
+        if not query:
             return
-        
-        for item in items[:5]:
-            item_data = item.get("data", [])
-            title = item_data[0].get("title", "Brak tytułu") if item_data else "Brak tytułu"
 
-            links = item.get("links", []) 
-            href = links[0].get("href", "Brak linku") if links else "Brak linku"
+        self.image_listbox.delete(0, tk.END)
+        self.image_urls.clear()
 
-            print(f"Tytuł: {title}")
-            print(f"Link: {href}")
-            print("-" * 40)
-    
-    except Exception as e:
-        print(f"Błąd: {e}")
+        try:
+            api = NasaAPI(query)
+            items = api.get_images()
+            for item in items:
+                title = item.get("data", [{}])[0].get("title", "Brak tytułu")
+                link = item.get("links", [{}])[0].get("href", "")
+                self.image_listbox.insert(tk.END, title)
+                self.image_urls.append(link)
+        except Exception as e:
+            self.image_listbox.insert(tk.END, f"Błąd: {e}")
 
-if __name__ == "__main__":  
-    main()
+    def show_image(self, event):
+        selection = event.widget.curselection()
+        if not selection:
+            return
+
+        index = selection[0]
+        url = self.image_urls[index]
+
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                img_data = response.content
+                image = Image.open(io.BytesIO(img_data))
+                image = image.resize((500, 500))
+                photo = ImageTk.PhotoImage(image)
+                self.image_label.configure(image=photo)
+                self.image_label.image = photo
+        except Exception as e:
+            self.image_listbox.insert(tk.END, f"Błąd obrazu: {e}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = NasaApp(root)
+    root.mainloop()
